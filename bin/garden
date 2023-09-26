@@ -2,4 +2,5 @@
 
 repo_root=$(cd `dirname $0` && cd .. && pwd)
 
-node --max-old-space-size=4096 --max-semi-space-size=64 ${repo_root}/cli/bin/garden "$@"
+# node  --inspect --expose-gc --stack-trace-limit=1000 --max-old-space-size=4096 --max-semi-space-size=64 ${repo_root}/cli/bin/garden "$@"
+node --stack-trace-limit=1000 --max-old-space-size=4096 --max-semi-space-size=64 ${repo_root}/cli/bin/garden "$@"

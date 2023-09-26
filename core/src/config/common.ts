@@ -689,17 +689,18 @@ export function parseActionReference(reference: string | object): ActionReferenc
   }
 }
 
-export const joiIdentifier = () =>
-  joi
-    .string()
-    .regex(identifierRegex)
-    .description(joiIdentifierDescription[0].toUpperCase() + joiIdentifierDescription.slice(1))
+let _joiIdentifier = joi
+.string()
+.regex(identifierRegex)
+.description(joiIdentifierDescription[0].toUpperCase() + joiIdentifierDescription.slice(1))
 
-export const joiPrimitive = () =>
+export const joiIdentifier = () => _joiIdentifier
+
+export const joiPrimitive = memoize(() =>
   joi
     .alternatives()
     .try(joi.string().allow("").allow(null), joi.number(), joi.boolean())
-    .description("Number, string or boolean")
+    .description("Number, string or boolean"))
 
 /**
  * Add a joi.actionReference() type, wrapping the parseActionReference() function and returning it as a parsed object.

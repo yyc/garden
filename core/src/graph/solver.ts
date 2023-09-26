@@ -31,6 +31,7 @@ import {
   TaskRequestParams,
 } from "./nodes"
 import AsyncLock from "async-lock"
+import { containerModuleOutputsSchema } from "../plugins/container/moduleConfig"
 
 const taskStyle = chalk.cyan.bold
 
@@ -55,6 +56,8 @@ export class GraphSolver extends TypedEventEmitter<SolverEvents> {
   private readonly requestedTasks: { [batchId: string]: { [key: string]: RequestTaskNode } }
   // All nodes, including implicit from dependencies
   private nodes: WrappedNodes
+  // All nodes, including implicit from dependencies
+  private nodeDependencies: {[key: string]: TaskNode[]}
   // All pending nodes, including implicit from dependencies
   private pendingNodes: WrappedNodes
   // Tasks currently running
@@ -77,6 +80,7 @@ export class GraphSolver extends TypedEventEmitter<SolverEvents> {
     this.inLoop = false
     this.requestedTasks = {}
     this.nodes = {}
+    this.nodeDependencies = {}
     this.pendingNodes = {}
     this.inProgress = {}
     this.lock = new AsyncLock()
@@ -248,6 +252,53 @@ export class GraphSolver extends TypedEventEmitter<SolverEvents> {
     return graph
   }
 
+  private getPendingLeaves() {
+    // starting with the nodes in this.pendingNodes
+    // find all nodes that either:
+    //   have no other dependencies (node.getRemainingDependencies is empty)
+    //   or all dependencies are complete (node.isComplete() is true)
+    let isLeaf = {}
+    let _this = this;
+
+    const recurse = (node: TaskNode) => {
+      if(isLeaf[node.getKey()] != undefined) {
+        return isLeaf[node.getKey()];
+      }
+      if(node.isComplete()) {
+        isLeaf[node.getKey()] = false;
+        return false;
+      }
+      // same logic as in getRemainingDependencies, except we reuse the resolved TaskNode earlier
+      const nodeDeps = _this.getNodeDependencies(node).filter((d) => d.getResult() === undefined)
+      // Mark it now so that we won't be stuck in an infinite loop
+      //   if there is a cycle
+      isLeaf[node.getKey()] = true;
+      for(let dep of nodeDeps) {
+        if(dep.isComplete()) {
+          continue;
+        }
+        // at least one dependent node is not complete
+        // so this node cannot be a leaf
+        isLeaf[node.getKey()] = false;
+        // but the dependencies could contain leaves
+        recurse(dep);
+      }
+      return isLeaf[node.getKey()]
+    }
+    for (const n of Object.values(this.pendingNodes)) {
+      recurse(n);
+    }
+
+    return Object.keys(isLeaf).filter((key) => isLeaf[key]).map((key) => this.nodes[key])
+  }
+
+  private getNodeDependencies(node: TaskNode) {
+    const key = node.getKey()
+    const deps = node.getDependencies();
+    return deps.map((n) => this.nodes[n.getKey()])
+    
+  }
+
   start() {
     this.emit("start", {})
   }
@@ -306,14 +357,17 @@ export class GraphSolver extends TypedEventEmitter<SolverEvents> {
         }
       }
 
-      const graph = this.getPendingGraph()
+      const pending = this.getPendingLeaves()
 
-      if (graph.size() === 0) {
+      // const graph = this.getPendingGraph()
+
+
+      // const leaves = graph.overallOrder(true)
+      // const pending = leaves.map((key) => this.nodes[key])
+
+      if (pending.length === 0) {
         return
       }
-
-      const leaves = graph.overallOrder(true)
-      const pending = leaves.map((key) => this.nodes[key])
 
       const inProgressNodes = Object.values(this.inProgress)
       const inProgressByGroup = groupBy(inProgressNodes, "type")
